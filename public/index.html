@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Military Terminal Chatroom</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: "Courier New", Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .terminal {
+            width: 80%;
+            max-width: 800px;
+            background-color: #111;
+            padding: 20px;
+            border: 2px solid #0f0;
+            border-radius: 10px;
+            overflow-y: auto;
+        }
+        .log {
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 10px;
+        }
+        input, button {
+            background-color: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 10px;
+            font-size: 16px;
+            margin-right: 5px;
+        }
+        input {
+            flex: 1;
+        }
+        .input-group {
+            display: flex;
+        }
+        #fileInput {
+            background-color: #333;
+            color: #0f0;
+        }
+        #binaryEncryption {
+            font-family: "Courier New", Courier, monospace;
+            font-size: 14px;
+            margin-top: 20px;
+            display: none;
+            color: #0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal">
+        <div class="log" id="log"></div>
+        <div id="binaryEncryption"></div>
+        <div class="input-group">
+            <input type="text" id="messageInput" placeholder="Type your message here...">
+            <button id="sendButton">Send</button>
+            <input type="file" id="fileInput">
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script>
+        const log = document.getElementById('log');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const fileInput = document.getElementById('fileInput');
+        const binaryEncryptionDiv = document.getElementById('binaryEncryption');
+
+        const socket = io('http://localhost:3000'); // Update this to your server address
+        let username = localStorage.getItem('username');
+        if (!username) {
+            username = `User-${Math.random().toString(36).substring(2, 10)}`;
+            localStorage.setItem('username', username);
+        }
+        logMessage(`Welcome, ${username}!`);
+
+        let chatRoomId = null;
+        let partnerUsername = null;
+
+        // Show binary encryption before connecting
+        function startEncryption() {
+            let binaryCode = '';
+            let counter = 0;
+            binaryEncryptionDiv.style.display = 'block'; // Show encryption message
+
+            const encryptionDuration = 60000; // 1 minute in milliseconds
+            const incrementDuration = 50; // Speed at which binary code is generated
+            const numIncrements = encryptionDuration / incrementDuration;
+
+            const encryptionInterval = setInterval(() => {
+                if (counter < numIncrements) {
+                    binaryCode += Math.random() > 0.5 ? '1' : '0';
+                    if (counter % 8 === 0) binaryCode += ' ';
+                    counter++;
+                    binaryEncryptionDiv.innerHTML = `Encrypting...<br>${binaryCode}`;
+                } else {
+                    clearInterval(encryptionInterval);
+                    binaryEncryptionDiv.style.display = 'none'; // Hide the binary code after completion
+                    logMessage('Encryption complete.');
+                    startChatConnection(); // Proceed to chat connection after encryption
+                }
+            }, incrementDuration);
+        } 
+        
+        // Start chat connection 
+        function startChatConnection() {
+            partnerUsername = prompt('Enter the username of the person you want to chat with:');
+            if (partnerUsername) {
+                chatRoomId = [username, partnerUsername].sort().join('-');
+                logMessage(`Connecting to ${partnerUsername}...`);
+                logMessage(`You are now connected to ${partnerUsername}.`);
+                socket.emit('join', { username, chatRoomId });
+            }
+        }
+
+        // Handle sending messages
+        sendButton.addEventListener('click', () => {
+            const message = messageInput.value.trim();
+            if (message && chatRoomId) {
+                //logMessage(`You: ${message}`);  // Log the message only once
+                socket.emit('message', { sender: username, receiver: partnerUsername, message, chatRoomId });
+                messageInput.value = '';
+            } else if (message && !chatRoomId) {
+                startEncryption(); // Start encryption before establishing the chat
+            }
+        });
+
+        // Handle file upload
+        fileInput.addEventListener('change', (event) => {
+    const file = event.target.files[0];
+    if (file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+            const fileData = reader.result.split(',')[1]; // Get base64 part
+            const fileName = file.name;
+
+            // Emit the uploadFile event to the server
+            socket.emit('uploadFile', {
+                sender: username,
+                receiver: partnerUsername,
+                fileName,
+                fileData, // Base64 encoded file data
+                chatRoomId,
+            });
+        };
+        reader.readAsDataURL(file);
+    }
+});
+
+
+        // Listen for previous messages
+        socket.on('previousMessages', (messages) => {
+    messages.forEach((msg) => {
+        if (msg.sender !== username) {
+            logMessage(`${msg.sender}: ${msg.message}`); 
+        } else {
+            logMessage(`You: ${msg.message}`); 
+        }
+    });
+});
+
+        // Listen for new messages during the chat
+socket.on('message', ({ sender, message }) => {
+    if (sender !== username) { 
+        logMessage(`${sender}: ${message}`);
+    } else { 
+        logMessage(`You: ${message}`); 
+    }
+});
+
+// Display messages in the terminal
+function logMessage(message) {
+    const div = document.createElement('div');
+    div.innerHTML = message; // Use innerHTML for rendering links
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+}
+
+    </script>
+
+</body>
+</html>
